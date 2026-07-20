@@ -72,6 +72,8 @@ cargo build --release
 ./target/release/sd-immich-tagger --dry-run
 ```
 
+Pre-built binaries for Linux, Windows, and macOS (Apple Silicon) are published as GitHub Release assets when a version tag (for example `v1.0.0`) is pushed.
+
 ## Output
 
 The CLI prints per-asset progress and a final summary:
