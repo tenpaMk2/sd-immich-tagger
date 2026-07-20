@@ -1,5 +1,9 @@
 # sd-immich-tagger
 
+<p align="center">
+  <img src="images/icon.png" alt="sd-immich-tagger icon" width="160">
+</p>
+
 Backfill Immich asset descriptions and tags from Stable Diffusion PNG metadata for assets uploaded before the Immich uploader script was introduced.
 
 ## What it does
