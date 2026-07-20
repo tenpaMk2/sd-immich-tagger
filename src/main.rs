@@ -3,9 +3,11 @@ mod metadata;
 mod tags;
 
 use anyhow::{Context, Result};
+use chrono::DateTime;
 use clap::Parser;
 use immich::{
     has_empty_description, is_before_cutoff, is_favorite_asset, is_png_asset, ImmichClient,
+    DEFAULT_CUTOFF_DATE,
 };
 use metadata::extract_parameters;
 use std::thread;
@@ -33,6 +35,10 @@ struct Cli {
     /// Immich API key (falls back to IMMICH_API_KEY)
     #[arg(long, env = "IMMICH_API_KEY")]
     immich_api_key: Option<String>,
+
+    /// Only process assets with fileCreatedAt before this RFC3339 datetime
+    #[arg(long, env = "CUTOFF_DATE", default_value = DEFAULT_CUTOFF_DATE)]
+    cutoff_date: String,
 }
 
 #[derive(Debug, Default)]
@@ -59,18 +65,27 @@ fn run(cli: Cli) -> Result<()> {
         .immich_api_key
         .filter(|value| !value.trim().is_empty())
         .context("IMMICH_API_KEY is required (env var or --immich-api-key)")?;
+    let cutoff_datetime = DateTime::parse_from_rfc3339(cli.cutoff_date.trim())
+        .with_context(|| {
+            format!(
+                "CUTOFF_DATE must be RFC3339 (for example {DEFAULT_CUTOFF_DATE}): {}",
+                cli.cutoff_date
+            )
+        })?;
 
     let client = ImmichClient::new(&immich_url, &immich_api_key)?;
     let mut summary = Summary::default();
     let mut page = 1u32;
     let mut processed = 0usize;
+    let cutoff_date = cli.cutoff_date.trim().to_string();
 
     if cli.dry_run {
         println!("Dry run mode: no changes will be written.");
     }
+    println!("Cutoff date (fileCreatedAt before): {cutoff_date}");
 
     loop {
-        let search_page = client.search_image_assets(page)?;
+        let search_page = client.search_image_assets(page, &cutoff_date)?;
         if search_page.items.is_empty() {
             break;
         }
@@ -81,7 +96,7 @@ fn run(cli: Cli) -> Result<()> {
             if !is_png_asset(&asset)
                 || !has_empty_description(&asset)
                 || !is_favorite_asset(&asset)
-                || !is_before_cutoff(&asset)
+                || !is_before_cutoff(&asset, &cutoff_datetime)
             {
                 continue;
             }
@@ -90,7 +105,7 @@ fn run(cli: Cli) -> Result<()> {
 
             if let Some(limit) = cli.limit {
                 if processed >= limit {
-                    print_summary(&summary);
+                    print_summary(&summary, &cutoff_date);
                     return Ok(());
                 }
             }
@@ -133,7 +148,7 @@ fn run(cli: Cli) -> Result<()> {
         page += 1;
     }
 
-    print_summary(&summary);
+    print_summary(&summary, &cutoff_date);
     Ok(())
 }
 
@@ -188,17 +203,15 @@ fn process_asset(
     })
 }
 
-fn print_summary(summary: &Summary) {
+fn print_summary(summary: &Summary, cutoff_date: &str) {
     println!();
     println!("Summary");
     println!(
-        "  matching search results (favorite, fileCreatedAt before {}, IMAGE): {}",
-        immich::CUTOFF_DATE,
+        "  matching search results (favorite, fileCreatedAt before {cutoff_date}, IMAGE): {}",
         summary.scanned
     );
     println!(
-        "  candidates (favorite, before {}, empty description PNG): {}",
-        immich::CUTOFF_DATE,
+        "  candidates (favorite, before {cutoff_date}, empty description PNG): {}",
         summary.candidates
     );
     println!("  updated: {}", summary.updated);
@@ -221,6 +234,8 @@ mod tests {
             "http://example.com",
             "--immich-api-key",
             "secret",
+            "--cutoff-date",
+            "2026-01-01T00:00:00+09:00",
         ])
         .unwrap();
 
@@ -228,5 +243,20 @@ mod tests {
         assert_eq!(cli.limit, Some(10));
         assert_eq!(cli.immich_url.as_deref(), Some("http://example.com"));
         assert_eq!(cli.immich_api_key.as_deref(), Some("secret"));
+        assert_eq!(cli.cutoff_date, "2026-01-01T00:00:00+09:00");
+    }
+
+    #[test]
+    fn cli_uses_default_cutoff_date() {
+        let cli = Cli::try_parse_from([
+            "sd-immich-tagger",
+            "--immich-url",
+            "http://example.com",
+            "--immich-api-key",
+            "secret",
+        ])
+        .unwrap();
+
+        assert_eq!(cli.cutoff_date, DEFAULT_CUTOFF_DATE);
     }
 }

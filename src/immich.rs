@@ -4,17 +4,13 @@ use reqwest::blocking::Client;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::LazyLock;
 use std::time::Duration;
 
 use crate::tags::truncate_tag_name;
 
 pub(crate) const PAGE_SIZE: u32 = 1000;
-pub const CUTOFF_DATE: &str = "2026-06-20T00:00:00+09:00";
+pub const DEFAULT_CUTOFF_DATE: &str = "2026-06-20T00:00:00+09:00";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
-
-static CUTOFF_DATETIME: LazyLock<DateTime<FixedOffset>> =
-    LazyLock::new(|| DateTime::parse_from_rfc3339(CUTOFF_DATE).expect("valid cutoff datetime"));
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Asset {
@@ -131,11 +127,11 @@ impl ImmichClient {
         Ok(headers)
     }
 
-    pub fn search_image_assets(&self, page: u32) -> Result<SearchAssets> {
+    pub fn search_image_assets(&self, page: u32, taken_before: &str) -> Result<SearchAssets> {
         let body = MetadataSearchRequest {
             asset_type: "IMAGE".to_string(),
             is_favorite: true,
-            taken_before: CUTOFF_DATE.to_string(),
+            taken_before: taken_before.to_string(),
             with_exif: true,
             page,
             size: PAGE_SIZE,
@@ -315,13 +311,13 @@ pub fn is_favorite_asset(asset: &Asset) -> bool {
     asset.is_favorite
 }
 
-pub fn is_before_cutoff(asset: &Asset) -> bool {
+pub fn is_before_cutoff(asset: &Asset, cutoff: &DateTime<FixedOffset>) -> bool {
     let Some(file_created_at) = asset.file_created_at.as_deref() else {
         return false;
     };
 
     parse_datetime(file_created_at)
-        .map(|created_at| created_at < *CUTOFF_DATETIME)
+        .map(|created_at| created_at < *cutoff)
         .unwrap_or(false)
 }
 
@@ -383,25 +379,31 @@ mod tests {
 
     #[test]
     fn detects_assets_before_cutoff() {
-        assert!(is_before_cutoff(&asset(
-            "foo.png",
-            None,
-            true,
-            Some("2026-06-19T23:59:59+09:00")
-        )));
-        assert!(!is_before_cutoff(&asset(
-            "foo.png",
-            None,
-            true,
-            Some("2026-06-20T00:00:00+09:00")
-        )));
-        assert!(!is_before_cutoff(&asset("foo.png", None, true, None)));
-        assert!(!is_before_cutoff(&asset(
-            "foo.png",
-            None,
-            true,
-            Some("not-a-date")
-        )));
+        let cutoff = DateTime::parse_from_rfc3339(DEFAULT_CUTOFF_DATE).unwrap();
+
+        assert!(is_before_cutoff(
+            &asset(
+                "foo.png",
+                None,
+                true,
+                Some("2026-06-19T23:59:59+09:00")
+            ),
+            &cutoff
+        ));
+        assert!(!is_before_cutoff(
+            &asset(
+                "foo.png",
+                None,
+                true,
+                Some("2026-06-20T00:00:00+09:00")
+            ),
+            &cutoff
+        ));
+        assert!(!is_before_cutoff(&asset("foo.png", None, true, None), &cutoff));
+        assert!(!is_before_cutoff(
+            &asset("foo.png", None, true, Some("not-a-date")),
+            &cutoff
+        ));
     }
 
     #[test]
@@ -433,7 +435,7 @@ mod tests {
         let body = MetadataSearchRequest {
             asset_type: "IMAGE".to_string(),
             is_favorite: true,
-            taken_before: CUTOFF_DATE.to_string(),
+            taken_before: DEFAULT_CUTOFF_DATE.to_string(),
             with_exif: true,
             page: 1,
             size: PAGE_SIZE,
@@ -442,7 +444,7 @@ mod tests {
         let json = serde_json::to_value(body).unwrap();
         assert_eq!(json["type"], "IMAGE");
         assert_eq!(json["isFavorite"], true);
-        assert_eq!(json["takenBefore"], CUTOFF_DATE);
+        assert_eq!(json["takenBefore"], DEFAULT_CUTOFF_DATE);
         assert!(json.get("createdBefore").is_none());
         assert_eq!(json["withExif"], true);
         assert_eq!(json["page"], 1);
