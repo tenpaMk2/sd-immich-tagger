@@ -30,6 +30,21 @@ Required environment variables:
 
 You can also pass them as CLI flags: `--immich-url` and `--immich-api-key`.
 
+### API key permissions
+
+Create an API key in Immich (Settings → API Keys) with at least these permissions:
+
+| Permission       | Used for                    |
+| ---------------- | --------------------------- |
+| `asset.read`     | Search assets and list tags |
+| `asset.download` | Download original PNG files |
+| `asset.update`   | Write asset descriptions    |
+| `tag.read`       | Look up existing tags       |
+| `tag.create`     | Create missing tags         |
+| `tag.asset`      | Link tags to assets         |
+
+Dry-run mode still requires `asset.read` and `asset.download` because it downloads originals to read PNG metadata. If a request fails with `403 Forbidden` and a `Missing required permission` message, enable the permission listed in the error.
+
 ## Usage
 
 Dry run first:
@@ -73,3 +88,7 @@ The CLI prints per-asset progress and a final summary:
 - Only favorited PNG assets with `fileCreatedAt` before `2026-06-20T00:00:00+09:00` and an empty description are modified. Description emptiness is read from search results with `withExif: true`, so already-updated assets are skipped on subsequent runs.
 - PNGs without Stable Diffusion metadata are skipped.
 - A short delay is inserted between assets to reduce API pressure.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
