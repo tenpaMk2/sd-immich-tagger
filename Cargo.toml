@@ -1,6 +1,6 @@
 [package]
 name = "sd-immich-tagger"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2021"
 description = "Backfill Immich descriptions and tags from Stable Diffusion PNG metadata"
 license = "MIT"
